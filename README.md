@@ -1,2 +1,6 @@
-# filecryptodisk
-file is cryptodisk
+
+# Зависимости
+
+```
+> yay cryptsetup
+```

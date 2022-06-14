@@ -1,0 +1,337 @@
+#!/usr/bin/env python
+
+# -*- coding: utf-8 -*- 
+
+import subprocess
+import sys
+import os.path
+
+from PyQt5 import (QtCore, QtGui)
+from PyQt5.QtWidgets import (QWidget, QLabel, QTextEdit, QLineEdit, QPushButton,
+    QFrame, QApplication, QMessageBox, QGridLayout, QComboBox, QFileDialog, QStackedWidget)
+
+def pout(msg : str):
+    print(msg)
+
+def ifMsg(text : str, type : int, MODAL:bool = True):
+    '''
+    0 - None
+    1 - Question
+    2 - Information
+    3 - Warning
+    4 - Critical
+    '''
+    msg = QMessageBox()
+
+    if(type == 0):
+        msg.setWindowTitle("")
+    elif(type == 1):
+        msg.setIcon(QMessageBox.Question)
+        msg.setWindowTitle("Question")
+    elif(type == 2):
+        msg.setIcon(QMessageBox.Information)
+        msg.setWindowTitle("Info")
+    elif(type == 3):
+        msg.setIcon(QMessageBox.Warning)
+        msg.setWindowTitle("Warning")
+    elif(type == 4):
+        msg.setIcon(QMessageBox.Critical)
+        msg.setWindowTitle("Error")
+
+    msg.setText(text)
+    msg.setStandardButtons(QMessageBox.Ok)
+    msg.setModal(MODAL)
+    msg.exec()
+
+def exe(command : str, debug : bool = True) -> tuple:
+    '''
+    Аргумент - команда для выполнения в терминале. Например: "ls -lai ."
+    Возвращает кортеж, где элементы:
+        0 - строка stdout
+        1 - строка stderr
+        2 - returncode
+    '''
+    if(debug):
+        pout(f"> {command}")
+
+    process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    out = process.stdout.read().decode("utf-8")
+    err = process.stderr.read().decode("utf-8") 
+    errcode = process.returncode
+    return (out, err, errcode)
+
+def exe_orErrorExit(command : str, debug : bool = True) -> tuple:
+    out = exe(command, debug)
+    if(out[1] != ""):
+        error_msg = f"=====\nError: {out[1]}\n====="
+        pout(error_msg)
+        ifMsg(error_msg, 4)
+        exit()
+    return out
+
+def is_int(x : str):
+    try:
+        tempVal = int(x)
+        return True
+    except:
+        return False
+
+def getRandomString(lenght : int = 20) -> str:
+    import string
+    import random
+    S = ''.join(random.choices(string.ascii_uppercase + string.digits, k=lenght))
+    return S
+
+def writeToFile(text : str, fileName : str):
+    with open(fileName, 'w', encoding="utf-8") as temp:
+        temp.write(text)
+
+def createFile(size : int, fileName : str):
+    with open(fileName, 'wb') as f:
+        f.seek(size-1)
+        f.write(b"\0")
+
+def create_inputPasswordScript_inTMP() -> str:
+    S = getRandomString()
+    scriptFile = f"/tmp/{S}"
+    pout(f"Creating sudoInputPasswordScript...")
+    exe_orErrorExit(f"touch {scriptFile}")
+    exe_orErrorExit(f"chmod 0700 {scriptFile}")
+    scriptText = f"#!/bin/bash\nzenity --password --title=\"sudo password prompt\"\n"
+    writeToFile(scriptText, scriptFile)
+    pout(f"Created: {scriptFile}")
+    return scriptFile
+
+#RootPassQueScript = None
+#rpqsev = None # RootPassQueScriptEnvVar
+
+class MainWidget(QWidget):
+
+    __grid = None
+
+    __widgetsSelectCombo = None
+    __variantsToChoose = ["Create cryptofiledisk", "Open cryptofiledisk", "Create RAM-disk"]
+    __stackedWidget = None
+
+    __createWidget = None
+    __openWidget = None
+    __ramWidget = None
+
+    def __init__(self):
+        super().__init__()
+
+        global RootPassQueScript
+        global rpqsev
+        if(RootPassQueScript == None):
+            RootPassQueScript = create_inputPasswordScript_inTMP()
+            rpqsev = f"SUDO_ASKPASS=\"{RootPassQueScript}\""
+
+        self.__grid = QGridLayout()
+
+        self.__widgetsSelectCombo = QComboBox(self)
+        self.__widgetsSelectCombo.addItems(self.__variantsToChoose)
+        self.__widgetsSelectCombo.activated[str].connect(self.__widgetsSelectComboActivated)
+
+        self.__createWidget = CreateCryptoDiskWidget()
+        self.__openWidget = OpenCryptoDiskWidget()
+        self.__ramWidget = CreateRamDiskWidget()
+
+        self.__stackedWidget = QStackedWidget(self)
+        self.__stackedWidget.addWidget(self.__createWidget)
+        self.__stackedWidget.addWidget(self.__openWidget)
+        self.__stackedWidget.addWidget(self.__ramWidget)
+        # ЕЩЁ CLOSE
+
+        self.__grid.addWidget(self.__widgetsSelectCombo, 0, 0)
+        self.__grid.addWidget(self.__stackedWidget, 1, 0)
+
+        self.setLayout(self.__grid)
+
+        self.show()
+
+    def __widgetsSelectComboActivated(self, text : str):
+        i = 0
+        for var_i in self.__variantsToChoose:
+            if(text == var_i):
+                break
+            i-=-1
+        self.__stackedWidget.setCurrentIndex(i)
+
+class FileChooser(QWidget):
+
+    __filePath = None
+    __fileButton = None
+
+    __selectedPath = None
+
+    __grid = None
+
+    def __init__(self):
+        super().__init__()
+
+        self.__grid = QGridLayout()
+
+        self.__filePath = QLabel(" "*20)
+        self.__fileButton = QPushButton("Choose file", self)
+        self.__fileButton.clicked.connect(lambda:self.__fileButton_hundler())
+
+        self.__grid.addWidget(self.__filePath, 0, 0)
+        self.__grid.addWidget(self.__fileButton, 0, 1)
+
+        self.setLayout(self.__grid)
+
+    def __fileButton_hundler(self):
+        curdir = str(os.getcwd())
+        filepath = QFileDialog.getSaveFileName(self, 'Select file', curdir)[0]
+        if(filepath == ""):
+            return
+        pout(filepath)
+        self.__selectedPath = filepath
+        self.__filePath.setText(filepath)
+
+    def getPath(self):
+        return self.__selectedPath
+
+class CreateCryptoDiskWidget(QWidget):
+    '''
+    dd if=/dev/zero of=file bs=1M count=100
+    mkfs.ext4 file
+    echo -n "123" | cryptsetup luksFormat ./test/file -
+
+    user in:
+    where file
+    size file
+    password
+
+    mkdir mounted_file/
+    echo -n "123" | sudo cryptsetup luksOpen ./test/file ./testrc -
+    # testrc - Название контейнера
+    sudo mount -o loop file mounted_file/
+    sudo chmod -R 777 mounted_file/
+
+    sudo cryptsetup luksClose testrc
+    sudo umount mounted_file/
+    rmdir mounted_file/
+    rm file
+    '''
+
+    __grid = None
+
+    __startButton = None
+
+    __progressText = None
+    __fileLabel = None
+    __sizeLabel = None
+    __passwordLabel = None
+    __fileText = None
+    __sizeText = None
+    __passwordText = None
+
+    def __init__(self):
+        super().__init__()
+
+        self.__grid = QGridLayout()
+
+        self.__progressText = QLabel("Input data below: ", self)
+        self.__fileLabel = QLabel("FileCryptoDisk path: ", self)
+        self.__sizeLabel = QLabel("FileCryptoDisk size (MB): ", self)
+        self.__passwordLabel = QLabel("FileCryptoDisk password: ", self)
+        self.__fileText = FileChooser()
+        self.__sizeText = QLineEdit(self)
+        self.__passwordText = QLineEdit(self)
+        self.__passwordText.setEchoMode(QLineEdit.Password)
+
+        self.__startButton = QPushButton("Start", self)
+        self.__startButton.clicked.connect(lambda:self.__startButton_handler())
+
+        self.__grid.addWidget(self.__progressText, 0, 0, 1, 2)
+        self.__grid.addWidget(self.__fileLabel, 1, 0, 1, 1)
+        self.__grid.addWidget(self.__fileText, 1, 1, 1, 1)
+        self.__grid.addWidget(self.__sizeLabel, 2, 0, 1, 1)
+        self.__grid.addWidget(self.__sizeText, 2, 1, 1, 1)
+        self.__grid.addWidget(self.__passwordLabel, 3, 0, 1, 1)
+        self.__grid.addWidget(self.__passwordText, 3, 1, 1, 1)
+        self.__grid.addWidget(self.__startButton, 4, 0, 1 , 2)
+
+        self.setLayout(self.__grid)
+
+    def ifFieldsFilled(self) -> bool:
+        if(self.__fileText.getPath() == None):
+            ifMsg("Enter filecryptodisk path", 4)
+            return False
+        if(is_int(self.__sizeText.text()) == False):
+            ifMsg("Size of filecryptodisk is not number or empty", 4)
+            return False
+        else:
+            a = int(self.__sizeText.text())
+            if(a < 1):
+                ifMsg("Size of filecryptodisk cannot be zero or negative", 4)
+                return False
+        if(self.__passwordText.text() == ""):
+            ifMsg("Enter filecryptodisk password", 4)
+            return False
+
+    def __startButton_handler(self):
+        if(self.ifFieldsFilled() == False):
+            return
+        filePath = os.path.abspath(self.__fileText.getPath())
+        pswd = self.__passwordText.text()
+        size = int(self.__sizeText.text())
+
+        self.__progressText.setText("=====Please wait, filecryptodisk is creating...=====")
+        self.__progressText.repaint()
+
+        #exe_orErrorExit(f"dd if=/dev/zero of={filePath} bs=1M count={size} && sync") # why output in errno?
+        createFile(size*1024*1024, filePath)
+        anw = exe(f"mkfs.ext4 {filePath}") # why output in errno?
+        pout(f":{anw[0]}\n:{anw[1]}\n:{anw[2]}")
+        pout(f"> echo *** | cryptsetup luksFormat {filePath} -")
+        exe_orErrorExit(f"echo \"{pswd}\" | cryptsetup luksFormat {filePath} -", False)
+
+        self.__progressText.setText("Input data below: ")
+        self.__progressText.repaint()
+        ifMsg(f"filecryptodisk {filePath} created", 2)
+        pout("\n===== filecryptodisk created =====")
+
+class OpenCryptoDiskWidget(QWidget):
+
+    __grid = None
+
+    def __init__(self):
+        super().__init__()
+
+        self.__grid = QGridLayout()
+        
+        testText = QLabel("Test2", self)
+        self.__grid.addWidget(testText, 0, 0)
+
+        self.setLayout(self.__grid)
+
+class CreateRamDiskWidget(QWidget):
+    '''
+    https://zalinux.ru/?p=4887
+    '''
+
+    __grid = None
+
+    def __init__(self):
+        super().__init__()
+
+        self.__grid = QGridLayout()
+        
+        testText = QLabel("Test3", self)
+        self.__grid.addWidget(testText, 0, 0)
+
+        self.setLayout(self.__grid)
+
+if __name__ == '__main__':
+
+    RootPassQueScript = None
+    rpqsev = None
+
+    app = QApplication(sys.argv)
+
+    mainWidget = MainWidget()
+    mainWidget.setWindowTitle("filecryptodisk")
+    mainWidget.setWindowIcon( QtGui.QIcon("./ico.png") )
+    sys.exit(app.exec_())
