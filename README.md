@@ -1,0 +1,2 @@
+# filecryptodisk
+file is cryptodisk
