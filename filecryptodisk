@@ -166,8 +166,17 @@ class FileChooser(QWidget):
 
     __grid = None
 
-    def __init__(self):
+    __type = None
+
+    def __init__(self, type : int):
+        '''
+        type == 1           is save
+        type == 2           is open
+        type == 3 or else   is directory
+        '''
         super().__init__()
+
+        self.__type = type
 
         self.__grid = QGridLayout()
 
@@ -182,7 +191,12 @@ class FileChooser(QWidget):
 
     def __fileButton_hundler(self):
         curdir = str(os.getcwd())
-        filepath = QFileDialog.getSaveFileName(self, 'Select file', curdir)[0]
+        if(self.__type == 1):
+            filepath = QFileDialog.getSaveFileName(self, "Select file", curdir)[0]
+        elif(self.__type == 2):
+            filepath = QFileDialog.getOpenFileName(self, "Select file", curdir)[0]
+        else: # or elif(self.__type == 3)
+            filepath = QFileDialog.getExistingDirectory(self, "Select directory", curdir)[0]
         if(filepath == ""):
             return
         pout(filepath)
@@ -202,12 +216,6 @@ class CreateCryptoDiskWidget(QWidget):
     where file
     size file
     password
-
-    mkdir mounted_file/
-    echo -n "123" | sudo cryptsetup luksOpen ./test/file ./testrc -
-    # testrc - Название контейнера
-    sudo mount -o loop file mounted_file/
-    sudo chmod -R 777 mounted_file/
 
     sudo cryptsetup luksClose testrc
     sudo umount mounted_file/
@@ -233,10 +241,10 @@ class CreateCryptoDiskWidget(QWidget):
         self.__grid = QGridLayout()
 
         self.__progressText = QLabel("Input data below: ", self)
-        self.__fileLabel = QLabel("FileCryptoDisk path: ", self)
-        self.__sizeLabel = QLabel("FileCryptoDisk size (MB): ", self)
-        self.__passwordLabel = QLabel("FileCryptoDisk password: ", self)
-        self.__fileText = FileChooser()
+        self.__fileLabel = QLabel("filecryptodisk path: ", self)
+        self.__sizeLabel = QLabel("filecryptodisk size (MB): ", self)
+        self.__passwordLabel = QLabel("filecryptodisk password: ", self)
+        self.__fileText = FileChooser(1)
         self.__sizeText = QLineEdit(self)
         self.__passwordText = QLineEdit(self)
         self.__passwordText.setEchoMode(QLineEdit.Password)
@@ -294,6 +302,33 @@ class CreateCryptoDiskWidget(QWidget):
         pout("\n===== filecryptodisk created =====")
 
 class OpenCryptoDiskWidget(QWidget):
+    '''
+    mkdir mounted_file/
+    echo -n "123" | sudo cryptsetup luksOpen ./test/file ./testrc -
+    # testrc - Название контейнера
+    #sudo mount -o loop file mounted_file/
+    sudo chmod -R 777 mounted_file/
+
+    user in:
+        where file
+        where mount
+        name of container
+        password
+    '''
+
+    __grid = None
+
+    __startButton = None
+
+    __progressText = None
+    __fileLabel = None
+    __mountLabel = None
+    __containerLabel = None
+    __passwordLabel = None
+    __fileText = None
+    __mountText = None
+    __containerText = None
+    __passwordText = None
 
     __grid = None
 
@@ -301,11 +336,56 @@ class OpenCryptoDiskWidget(QWidget):
         super().__init__()
 
         self.__grid = QGridLayout()
-        
-        testText = QLabel("Test2", self)
-        self.__grid.addWidget(testText, 0, 0)
+
+        self.__progressText = QLabel("Input data below: ", self)
+        self.__fileLabel = QLabel("filecryptodisk path: ", self)
+        self.__mountLabel = QLabel("Where filecryptodisk will be open: ", self)
+        self.__containerLabel = QLabel("Container name: ", self)
+        self.__passwordLabel = QLabel("filecryptodisk password: ", self)
+        self.__fileText = FileChooser(2)
+        self.__mountText = FileChooser(3)
+        self.__containerText = QLineEdit(self)
+        self.__passwordText = QLineEdit(self)
+        self.__passwordText.setEchoMode(QLineEdit.Password)
+
+        self.__startButton = QPushButton("Start", self)
+        self.__startButton.clicked.connect(lambda:self.__startButton_handler())
+
+        self.__grid.addWidget(self.__progressText, 0, 0, 1, 2)
+        self.__grid.addWidget(self.__fileLabel, 1, 0, 1, 1)
+        self.__grid.addWidget(self.__fileText, 1, 1, 1, 1)
+        self.__grid.addWidget(self.__mountLabel, 2, 0, 1, 1)
+        self.__grid.addWidget(self.__mountText, 2, 1, 1, 1)
+        self.__grid.addWidget(self.__sizeLabel, 3, 0, 1, 1)
+        self.__grid.addWidget(self.__sizeText, 3, 1, 1, 1)
+        self.__grid.addWidget(self.__containerLabel, 4, 0, 1, 1)
+        self.__grid.addWidget(self.__containerText, 4, 1, 1, 1)
+        self.__grid.addWidget(self.__startButton, 5, 0, 1 , 2)
 
         self.setLayout(self.__grid)
+
+    def ifFieldsFilled(self) -> bool:
+        if(self.__fileText.getPath() == None):
+            ifMsg("Enter filecryptodisk path", 4)
+            return False
+        if(self.__mountText.getPath() == None):
+            ifMsg("Enter where filecryptodisk will be open", 4)
+            return False
+        if(self.__containerText.text() == ""):
+            ifMsg("Enter container name", 4)
+            return False
+        if(self.__passwordText.text() == ""):
+            ifMsg("Enter filecryptodisk password", 4)
+            return False
+
+    def __startButton_handler(self):
+        if(self.ifFieldsFilled() == False):
+            return
+
+        filePath = os.path.abspath(self.__fileText.getPath())
+        mountPath = os.path.abspath(self.__mountText.getPath())
+        container = self.__containerText.text()
+        pswd = self.__passwordText.text()
 
 class CreateRamDiskWidget(QWidget):
     '''
@@ -333,5 +413,5 @@ if __name__ == '__main__':
 
     mainWidget = MainWidget()
     mainWidget.setWindowTitle("filecryptodisk")
-    mainWidget.setWindowIcon( QtGui.QIcon("./ico.png") )
+    mainWidget.setWindowIcon( QtGui.QIcon("./ico.png") ) # https://github.com/python-pillow/Pillow/issues/4097
     sys.exit(app.exec_())
