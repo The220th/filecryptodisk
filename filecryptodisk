@@ -5,6 +5,7 @@
 import subprocess
 import sys
 import os.path
+import time
 
 from PyQt5 import (QtCore, QtGui)
 from PyQt5.QtWidgets import (QWidget, QLabel, QTextEdit, QLineEdit, QPushButton,
@@ -102,9 +103,6 @@ def create_inputPasswordScript_inTMP() -> str:
     pout(f"Created: {scriptFile}")
     return scriptFile
 
-#RootPassQueScript = None
-#rpqsev = None # RootPassQueScriptEnvVar
-
 class MainWidget(QWidget):
 
     __grid = None
@@ -122,9 +120,11 @@ class MainWidget(QWidget):
 
         global RootPassQueScript
         global rpqsev
+        global sysuser
         if(RootPassQueScript == None):
             RootPassQueScript = create_inputPasswordScript_inTMP()
             rpqsev = f"SUDO_ASKPASS=\"{RootPassQueScript}\""
+            sysuser = exe_orErrorExit(f"echo -n $USER")[0]
 
         self.__grid = QGridLayout()
 
@@ -196,7 +196,7 @@ class FileChooser(QWidget):
         elif(self.__type == 2):
             filepath = QFileDialog.getOpenFileName(self, "Select file", curdir)[0]
         else: # or elif(self.__type == 3)
-            filepath = QFileDialog.getExistingDirectory(self, "Select directory", curdir)[0]
+            filepath = QFileDialog.getExistingDirectory(self, "Select directory", curdir)
         if(filepath == ""):
             return
         pout(filepath)
@@ -211,6 +211,7 @@ class CreateCryptoDiskWidget(QWidget):
     dd if=/dev/zero of=file bs=1M count=100
     mkfs.ext4 file
     echo -n "123" | cryptsetup luksFormat ./test/file -
+    https://elephly.net/posts/2013-10-01-dm-crypt.html
 
     user in:
     where file
@@ -285,16 +286,25 @@ class CreateCryptoDiskWidget(QWidget):
         filePath = os.path.abspath(self.__fileText.getPath())
         pswd = self.__passwordText.text()
         size = int(self.__sizeText.text())
+        conRndName = getRandomString(35)
+        global rpqsev
 
         self.__progressText.setText("=====Please wait, filecryptodisk is creating...=====")
         self.__progressText.repaint()
 
-        #exe_orErrorExit(f"dd if=/dev/zero of={filePath} bs=1M count={size} && sync") # why output in errno?
-        createFile(size*1024*1024, filePath)
-        anw = exe(f"mkfs.ext4 {filePath}") # why output in errno?
+        anw = exe(f"dd if=/dev/zero of={filePath} bs=1M count={size} && sync") # why output in errno?
         pout(f":{anw[0]}\n:{anw[1]}\n:{anw[2]}")
-        pout(f"> echo *** | cryptsetup luksFormat {filePath} -")
-        exe_orErrorExit(f"echo \"{pswd}\" | cryptsetup luksFormat {filePath} -", False)
+        #createFile(size*1024*1024, filePath)
+        #anw = exe(f"mkfs.ext4 {filePath}") # why output in errno?
+        #pout(f":{anw[0]}\n:{anw[1]}\n:{anw[2]}")
+        pout(f"> echo -n *** | {rpqsev} sudo --askpass cryptsetup luksFormat {filePath} -")
+        exe_orErrorExit(f"echo -n \"{pswd}\" | {rpqsev} sudo --askpass cryptsetup luksFormat {filePath} -", False)
+
+        exe_orErrorExit(f"echo -n \"{pswd}\" | {rpqsev} sudo --askpass cryptsetup luksOpen {filePath} {conRndName} -", False)
+        anw = exe(f"{rpqsev} sudo --askpass mkfs.ext4 /dev/mapper/{conRndName}") # why output in errno?
+        pout(f":{anw[0]}\n:{anw[1]}\n:{anw[2]}")
+        time.sleep(5)
+        exe_orErrorExit(f"{rpqsev} sudo cryptsetup luksClose {conRndName}")
 
         self.__progressText.setText("Input data below: ")
         self.__progressText.repaint()
@@ -356,10 +366,10 @@ class OpenCryptoDiskWidget(QWidget):
         self.__grid.addWidget(self.__fileText, 1, 1, 1, 1)
         self.__grid.addWidget(self.__mountLabel, 2, 0, 1, 1)
         self.__grid.addWidget(self.__mountText, 2, 1, 1, 1)
-        self.__grid.addWidget(self.__sizeLabel, 3, 0, 1, 1)
-        self.__grid.addWidget(self.__sizeText, 3, 1, 1, 1)
-        self.__grid.addWidget(self.__containerLabel, 4, 0, 1, 1)
-        self.__grid.addWidget(self.__containerText, 4, 1, 1, 1)
+        self.__grid.addWidget(self.__containerLabel, 3, 0, 1, 1)
+        self.__grid.addWidget(self.__containerText, 3, 1, 1, 1)
+        self.__grid.addWidget(self.__passwordLabel, 4, 0, 1, 1)
+        self.__grid.addWidget(self.__passwordText, 4, 1, 1, 1)
         self.__grid.addWidget(self.__startButton, 5, 0, 1 , 2)
 
         self.setLayout(self.__grid)
@@ -382,10 +392,25 @@ class OpenCryptoDiskWidget(QWidget):
         if(self.ifFieldsFilled() == False):
             return
 
+        self.__progressText.setText("=====Please wait, filecryptodisk is openning...=====")
+        self.__progressText.repaint()
+
+        global rpqsev
+        global sysuser
         filePath = os.path.abspath(self.__fileText.getPath())
         mountPath = os.path.abspath(self.__mountText.getPath())
         container = self.__containerText.text()
         pswd = self.__passwordText.text()
+
+        pout(f"> echo -n *** | {rpqsev} sudo --askpass cryptsetup luksOpen {filePath} {container} -")
+        exe_orErrorExit(f"echo -n \"{pswd}\" | {rpqsev} sudo --askpass cryptsetup luksOpen {filePath} {container} -", False)
+        exe_orErrorExit(f"{rpqsev} sudo --askpass mount /dev/mapper/{container} {mountPath}")
+        exe_orErrorExit(f"{rpqsev} sudo --askpass chown -R {sysuser} {mountPath}")
+
+        self.__progressText.setText("Input data below: ")
+        self.__progressText.repaint()
+        ifMsg(f"filecryptodisk {filePath} opened", 2)
+        pout("\n===== filecryptodisk opened =====")
 
 class CreateRamDiskWidget(QWidget):
     '''
@@ -408,6 +433,7 @@ if __name__ == '__main__':
 
     RootPassQueScript = None
     rpqsev = None
+    sysuser = None
 
     app = QApplication(sys.argv)
 
