@@ -108,11 +108,14 @@ class MainWidget(QWidget):
     __grid = None
 
     __widgetsSelectCombo = None
-    __variantsToChoose = ["Create cryptofiledisk", "Open cryptofiledisk", "Create RAM-disk"]
+    __variantsToChoose = ["Create cryptofiledisk", "Open cryptofiledisk", "Close cryptofiledisk", "Create RAM-disk"]
     __stackedWidget = None
+
+    __checkMappersButton = None
 
     __createWidget = None
     __openWidget = None
+    __closeWidget = None
     __ramWidget = None
 
     def __init__(self):
@@ -132,18 +135,24 @@ class MainWidget(QWidget):
         self.__widgetsSelectCombo.addItems(self.__variantsToChoose)
         self.__widgetsSelectCombo.activated[str].connect(self.__widgetsSelectComboActivated)
 
+        self.__checkMappersButton = QPushButton("Look containers", self)
+        self.__checkMappersButton.clicked.connect(lambda:self.__checkMappersButton_hundler())
+
         self.__createWidget = CreateCryptoDiskWidget()
         self.__openWidget = OpenCryptoDiskWidget()
+        self.__closeWidget = CloseCryptoDiskWidget()
         self.__ramWidget = CreateRamDiskWidget()
 
         self.__stackedWidget = QStackedWidget(self)
         self.__stackedWidget.addWidget(self.__createWidget)
         self.__stackedWidget.addWidget(self.__openWidget)
+        self.__stackedWidget.addWidget(self.__closeWidget)
         self.__stackedWidget.addWidget(self.__ramWidget)
         # ЕЩЁ CLOSE
 
-        self.__grid.addWidget(self.__widgetsSelectCombo, 0, 0)
-        self.__grid.addWidget(self.__stackedWidget, 1, 0)
+        self.__grid.addWidget(self.__widgetsSelectCombo, 0, 0, 1, 1)
+        self.__grid.addWidget(self.__checkMappersButton, 0, 1, 1, 1)
+        self.__grid.addWidget(self.__stackedWidget, 1, 0, 1, 2)
 
         self.setLayout(self.__grid)
 
@@ -156,6 +165,15 @@ class MainWidget(QWidget):
                 break
             i-=-1
         self.__stackedWidget.setCurrentIndex(i)
+    
+    def __checkMappersButton_hundler(self):
+        anw = exe_orErrorExit("ls /dev/mapper/")
+        toOut = "Opened containers: \n"
+        anw = anw[0].split()
+        for i in range(len(anw)):
+            toOut += f"{i+1}) {anw[i]}\n"
+        toOut += "\nNot all \"containers\" can be opened by you. \nSome containers are system and you should not touch them. \n"
+        ifMsg(toOut, 2)
 
 class FileChooser(QWidget):
 
@@ -217,11 +235,6 @@ class CreateCryptoDiskWidget(QWidget):
     where file
     size file
     password
-
-    sudo cryptsetup luksClose testrc
-    sudo umount mounted_file/
-    rmdir mounted_file/
-    rm file
     '''
 
     __grid = None
@@ -340,8 +353,6 @@ class OpenCryptoDiskWidget(QWidget):
     __containerText = None
     __passwordText = None
 
-    __grid = None
-
     def __init__(self):
         super().__init__()
 
@@ -411,6 +422,76 @@ class OpenCryptoDiskWidget(QWidget):
         self.__progressText.repaint()
         ifMsg(f"filecryptodisk {filePath} opened", 2)
         pout("\n===== filecryptodisk opened =====")
+
+class CloseCryptoDiskWidget(QWidget):
+    '''
+    sudo cryptsetup luksClose testrc
+    sudo umount mounted_file/
+
+    user in:
+    container name
+    mounted dir
+    '''
+
+    __grid = None
+
+    __startButton = None
+
+    __progressText = None
+    __containerLabel = None
+    __mountLabel = None
+    __containerText = None
+    __mountText = None
+
+    def __init__(self):
+        super().__init__()
+        self.__grid = QGridLayout()
+
+        self.__progressText = QLabel("Input data below: ", self)
+        self.__containerLabel = QLabel("Container name: ", self)
+        self.__mountLabel = QLabel("Where filecryptodisk will be open: ", self)
+        self.__containerText = QLineEdit(self)
+        self.__mountText = FileChooser(3)
+
+        self.__startButton = QPushButton("Start", self)
+        self.__startButton.clicked.connect(lambda:self.__startButton_handler())
+
+        self.__grid.addWidget(self.__progressText, 0, 0, 1, 2)
+        self.__grid.addWidget(self.__containerLabel, 1, 0, 1, 1)
+        self.__grid.addWidget(self.__containerText, 1, 1, 1, 1)
+        self.__grid.addWidget(self.__mountLabel, 2, 0, 1, 1)
+        self.__grid.addWidget(self.__mountText, 2, 1, 1, 1)
+        self.__grid.addWidget(self.__startButton, 3, 0, 1 , 2)
+
+        self.setLayout(self.__grid)
+
+    def ifFieldsFilled(self) -> bool:
+        if(self.__containerText.text() == ""):
+            ifMsg("Enter container name", 4)
+            return False
+        if(self.__mountText.getPath() == None):
+            ifMsg("Enter where filecryptodisk will be open", 4)
+            return False
+
+    def __startButton_handler(self):
+        if(self.ifFieldsFilled() == False):
+            return
+
+        self.__progressText.setText("=====Please wait, filecryptodisk is closing...=====")
+        self.__progressText.repaint()
+
+        global rpqsev
+        container = self.__containerText.text()
+        mountPath = os.path.abspath(self.__mountText.getPath())
+
+        exe_orErrorExit(f"{rpqsev} sudo umount {mountPath}")
+        exe_orErrorExit(f"{rpqsev} sudo cryptsetup luksClose {container}")
+
+        self.__progressText.setText("Input data below: ")
+        self.__progressText.repaint()
+        ifMsg(f"filecryptodisk {container} closed", 2)
+        pout("\n===== filecryptodisk closed =====")
+
 
 class CreateRamDiskWidget(QWidget):
     '''
