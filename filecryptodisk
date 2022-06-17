@@ -6,9 +6,10 @@ import subprocess
 import sys
 import os.path
 import time
+import hashlib
 
 from PyQt5 import (QtCore, QtGui)
-from PyQt5.QtWidgets import (QWidget, QLabel, QTextEdit, QLineEdit, QPushButton,
+from PyQt5.QtWidgets import (QWidget, QLabel, QCheckBox, QTextEdit, QLineEdit, QPushButton,
     QFrame, QApplication, QMessageBox, QGridLayout, QComboBox, QFileDialog, QStackedWidget)
 
 def pout(msg : str):
@@ -92,6 +93,20 @@ def createFile(size : int, fileName : str):
         f.seek(size-1)
         f.write(b"\0")
 
+def getHashOfFile(filePath : str) -> str:
+    buff_BLOCKSIZE = 65536 # 64 kB
+
+    sha = hashlib.sha256()
+    with open(filePath, "rb") as temp:
+        file_buffer = temp.read(buff_BLOCKSIZE)
+        while len(file_buffer) > 0:
+            sha.update(file_buffer)
+            file_buffer = temp.read(buff_BLOCKSIZE)
+    return sha.hexdigest()
+
+def getHashOfString(s : str):
+    return hashlib.sha256(s.encode('utf-8')).hexdigest()
+
 def create_inputPasswordScript_inTMP() -> str:
     S = getRandomString()
     scriptFile = f"/tmp/{S}"
@@ -108,7 +123,7 @@ class MainWidget(QWidget):
     __grid = None
 
     __widgetsSelectCombo = None
-    __variantsToChoose = ["Create cryptofiledisk", "Open cryptofiledisk", "Close cryptofiledisk", "Create RAM-disk"]
+    __variantsToChoose = ["Create cryptofiledisk", "Open cryptofiledisk", "Close cryptofiledisk", "Info cryptofiledisk", "Create RAM-disk"]
     __stackedWidget = None
 
     __checkMappersButton = None
@@ -116,6 +131,7 @@ class MainWidget(QWidget):
     __createWidget = None
     __openWidget = None
     __closeWidget = None
+    __infoWidget = None
     __ramWidget = None
 
     def __init__(self):
@@ -141,12 +157,14 @@ class MainWidget(QWidget):
         self.__createWidget = CreateCryptoDiskWidget()
         self.__openWidget = OpenCryptoDiskWidget()
         self.__closeWidget = CloseCryptoDiskWidget()
+        self.__infoWidget = InfoCryptoDiskWidget()
         self.__ramWidget = CreateRamDiskWidget()
 
         self.__stackedWidget = QStackedWidget(self)
         self.__stackedWidget.addWidget(self.__createWidget)
         self.__stackedWidget.addWidget(self.__openWidget)
         self.__stackedWidget.addWidget(self.__closeWidget)
+        self.__stackedWidget.addWidget(self.__infoWidget)
         self.__stackedWidget.addWidget(self.__ramWidget)
         # ЕЩЁ CLOSE
 
@@ -321,8 +339,8 @@ class CreateCryptoDiskWidget(QWidget):
 
         self.__progressText.setText("Input data below: ")
         self.__progressText.repaint()
-        ifMsg(f"filecryptodisk {filePath} created", 2)
         pout("\n===== filecryptodisk created =====")
+        ifMsg(f"filecryptodisk {filePath} created", 2)
 
 class OpenCryptoDiskWidget(QWidget):
     '''
@@ -420,8 +438,8 @@ class OpenCryptoDiskWidget(QWidget):
 
         self.__progressText.setText("Input data below: ")
         self.__progressText.repaint()
-        ifMsg(f"filecryptodisk {filePath} opened", 2)
         pout("\n===== filecryptodisk opened =====")
+        ifMsg(f"filecryptodisk {filePath} opened", 2)
 
 class CloseCryptoDiskWidget(QWidget):
     '''
@@ -489,8 +507,138 @@ class CloseCryptoDiskWidget(QWidget):
 
         self.__progressText.setText("Input data below: ")
         self.__progressText.repaint()
-        ifMsg(f"filecryptodisk {container} closed", 2)
         pout("\n===== filecryptodisk closed =====")
+        ifMsg(f"filecryptodisk {container} closed", 2)
+
+class InfoCryptoDiskWidget(QWidget):
+    '''
+    sudo cryptsetup -v status container
+
+    user in:
+                             true/false dir hierarchy
+    container name           mounted dir
+    '''
+    __grid = None
+
+    __startButtonInfo = None
+    __startButtonHash = None
+
+    __mainInfoText = None
+    __progressText = None
+
+    __infoWelcomeLabel = None
+    __hashWelcomeLabel = None
+
+    __infoLabel = None
+    __infoText = None
+    __hashLabel = None
+    __hashText = None
+    __hashCheckBox = None
+
+    def __init__(self):
+        super().__init__()
+        self.__grid = QGridLayout()
+
+        self.__mainInfoText = QLabel("Before using this, you need to open the container", self)
+        #self.__infoText.setReadOnly(True) QTextEdit
+        self.__progressText = QLabel("Input data below: ", self)
+        self.__infoWelcomeLabel = QLabel("Look info", self)
+        self.__hashWelcomeLabel = QLabel("Look hash", self)
+        self.__infoLabel = QLabel("Container name: ", self)
+        self.__infoText = QLineEdit(self)
+        self.__hashLabel = QLabel("Where filecryptodisk opened: ", self)
+        self.__hashText = FileChooser(3)
+        self.__hashCheckBox = QCheckBox("Directory hierarchy", self)
+        self.__hashCheckBox.setChecked(True)
+
+        self.__startButtonInfo = QPushButton("Get info", self)
+        self.__startButtonInfo.clicked.connect(lambda:self.__startButtonInfo_handler())
+        self.__startButtonHash = QPushButton("Get hash", self)
+        self.__startButtonHash.clicked.connect(lambda:self.__startButtonHash_handler())
+
+        self.__grid.addWidget(self.__mainInfoText, 0, 0, 1, 2)
+        self.__grid.addWidget(self.__progressText, 1, 0, 1, 2)
+        self.__grid.addWidget(self.__infoWelcomeLabel, 2, 0, 1, 1)
+        self.__grid.addWidget(self.__hashWelcomeLabel, 2, 1, 1, 1)
+        self.__grid.addWidget(self.__infoLabel, 3, 0, 1, 1)
+        self.__grid.addWidget(self.__hashLabel, 3, 1, 1, 1)
+        self.__grid.addWidget(self.__infoText, 4, 0, 2, 1)
+        self.__grid.addWidget(self.__hashText, 4, 1, 1, 1)
+        self.__grid.addWidget(self.__hashCheckBox, 5, 1, 1, 1)
+        self.__grid.addWidget(self.__startButtonInfo, 6, 0, 1, 1)
+        self.__grid.addWidget(self.__startButtonHash, 6, 1, 1, 1)
+
+        self.setLayout(self.__grid)
+
+    def __startButtonInfo_handler(self):
+        if(self.__infoText.text() == ""):
+            ifMsg("Enter container name", 4)
+            return
+
+        self.__progressText.setText("=====Please wait, getting info of filecryptodisk...=====")
+        self.__progressText.repaint()
+
+        global rpqsev
+        container = self.__infoText.text()
+
+        anw = exe_orErrorExit(f"{rpqsev} sudo --askpass cryptsetup -v status {container}")
+
+        self.__progressText.setText("Input data below: ")
+        self.__progressText.repaint()
+        pout(f"\n===== filecryptodisk info =====\n{anw[0]}")
+        ifMsg(f"filecryptodisk {container} info: \n\n{anw[0]}", 2)
+
+    def __startButtonHash_handler(self):
+        if(self.__hashText.getPath() == None):
+            ifMsg("Enter folder, where container opened", 4)
+            return
+
+        self.__progressText.setText("=====Please wait, getting hash of filecryptodisk...=====")
+        self.__progressText.repaint()
+
+        mountPath = os.path.abspath(self.__hashText.getPath())
+
+        is_dirHierarchy = self.__hashCheckBox.isChecked()
+        hash = self.calcHashOpenedContainer(mountPath, is_dirHierarchy)
+
+        self.__progressText.setText("Input data below: ")
+        self.__progressText.repaint()
+        pout(f"\n===== filecryptodisk hash =====\n{hash}")
+        ifMsg(f"filecryptodisk hash: \n\n{hash}", 2)
+        
+    def calcHashOpenedContainer(self, mount_path : str, hierarchyConsider : bool = True) -> str:
+        files_buff = [os.path.join(path, name) for path, subdirs, files in os.walk(mount_path) for name in files]
+        x = []
+        for i in range(len(files_buff)):
+            file_i = files_buff[i]
+            rel_file = os.path.relpath(file_i, mount_path)
+            x.append(rel_file)
+        dirs_buff = [os.path.join(path, name) for path, subdirs, files in os.walk(mount_path) for name in subdirs]
+        for i in range(len(dirs_buff)):
+            file_i = dirs_buff[i]
+            rel_file = os.path.relpath(file_i, mount_path)
+            x.append(rel_file)
+
+        x = sorted(x)
+        files = sorted(files_buff)
+        #print(x)
+        #print(files)
+
+        from io import StringIO
+        o = StringIO()
+        for file_i in files:
+            o.write(getHashOfFile(  os.path.abspath(file_i)  ))
+        hash_files = getHashOfString(o.getvalue())
+
+        o = StringIO()
+        for item in x:
+            o.write(item)
+        hash_hierarchy = getHashOfString(o.getvalue())
+
+        if(hierarchyConsider):
+            return getHashOfString(hash_files + hash_hierarchy)
+        else:
+            return hash_files
 
 
 class CreateRamDiskWidget(QWidget):
