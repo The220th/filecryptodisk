@@ -214,13 +214,16 @@ class FileChooser(QWidget):
 
     __type = None
 
-    def __init__(self, type : int):
+    __parent = None
+
+    def __init__(self, type : int, parent):
         '''
         type == 1           is save
         type == 2           is open
         type == 3 or else   is directory
         '''
         super().__init__()
+        self.__parent = parent
 
         self.__type = type
 
@@ -286,7 +289,7 @@ class CreateCryptoDiskWidget(QWidget):
         self.__fileLabel = QLabel("filecryptodisk path: ", self)
         self.__sizeLabel = QLabel("filecryptodisk size (MB): ", self)
         self.__passwordLabel = QLabel("filecryptodisk password: ", self)
-        self.__fileText = FileChooser(1)
+        self.__fileText = FileChooser(1, self)
         self.__sizeText = QLineEdit(self)
         self.__passwordText = QLineEdit(self)
         self.__passwordText.setEchoMode(QLineEdit.Password)
@@ -403,8 +406,8 @@ class OpenCryptoDiskWidget(QWidget):
         self.__mountLabel = QLabel("Where filecryptodisk will be open: ", self)
         self.__containerLabel = QLabel("Container name: ", self)
         self.__passwordLabel = QLabel("filecryptodisk password: ", self)
-        self.__fileText = FileChooser(2)
-        self.__mountText = FileChooser(3)
+        self.__fileText = FileChooser(2, self)
+        self.__mountText = FileChooser(3, self)
         self.__containerText = QLineEdit(self)
         self.__passwordText = QLineEdit(self)
         self.__passwordText.setEchoMode(QLineEdit.Password)
@@ -503,12 +506,12 @@ class CloseCryptoDiskWidget(QWidget):
         self.__containerLabel = QLabel("Container name: ", self)
         self.__mountLabel = QLabel("Where filecryptodisk will be open: ", self)
         self.__containerText = QLineEdit(self)
-        self.__mountText = FileChooser(3)
+        self.__mountText = FileChooser(3, self)
         self.__closeOnlyCheckBox = QCheckBox("Close container only")
         self.__closeOnlyCheckBox.setChecked(False)
         self.__closeOnlyCheckBox.setToolTip("If active: Will try to unmount the directory\
-             where the container was opened, and not just close the container\n\
-             If inactive: Just close opened luks container")
+where the container was opened, and not just close the container\n\
+If inactive: Just close opened luks container")
 
         self.__startButton = QPushButton("Start", self)
         self.__startButton.clicked.connect(lambda:self.__startButton_handler())
@@ -597,7 +600,7 @@ class InfoCryptoDiskWidget(QWidget):
         self.__infoLabel = QLabel("Container name: ", self)
         self.__infoText = QLineEdit(self)
         self.__hashLabel = QLabel("Where filecryptodisk opened: ", self)
-        self.__hashText = FileChooser(3)
+        self.__hashText = FileChooser(3, self)
         self.__hashCheckBox = QCheckBox("Directory hierarchy", self)
         self.__hashCheckBox.setChecked(True)
 
@@ -703,20 +706,111 @@ class InfoCryptoDiskWidget(QWidget):
 
 class CreateRamDiskWidget(QWidget):
     '''
-    https://zalinux.ru/?p=4887
+    sudo mount -t tmpfs -o size=sizeM tmpfs dir
+    sudo mount -t tmpfs -o remount,size=sizeM tmpfs dir
+    sudo umount dir
+    sudo chown -R sysuser mountPath
+
+    user in:
+    mount path
+    size
+    resizeCheckbox
     '''
 
     __grid = None
+
+    __startButton = None
+
+    __mainInfoText = None
+    __progressText = None
+
+    __mountLabel = None
+    __mountText = None
+    __sizeLabel = None
+    __seizeText = None
+    __resizeCheckBox = None
 
     def __init__(self):
         super().__init__()
 
         self.__grid = QGridLayout()
         
-        testText = QLabel("Test3", self)
-        self.__grid.addWidget(testText, 0, 0)
+        self.__mainInfoText = QLabel("If size==0: RAM disk will be close. \nIf resize checkbox active: \
+Size of RAM disk will be changed without closing, and all data will remain in place", self)
+        self.__progressText = QLabel("Input data below: ", self)
+        self.__mountLabel = QLabel("Where RAM disk will be opened: ", self)
+        self.__mountText = FileChooser(3, self)
+        self.__sizeLabel = QLabel("Size of RAM disk (MB): ", self)
+        self.__sizeLabel.setToolTip("if size==0, RAM disk will be closed")
+        self.__sizeText = QLineEdit(self)
+        self.__sizeText.setToolTip("if size==0, RAM disk will be closed")
+        self.__resizeCheckBox = QCheckBox("Resize", self)
+        self.__resizeCheckBox.setChecked(False)
+        self.__resizeCheckBox.setToolTip("If active: Size of RAM disk will be changed without closing. \
+All data will remain in place")
+
+        self.__startButton = QPushButton("Start", self)
+        self.__startButton.clicked.connect(lambda:self.__startButton_handler())
+
+        self.__grid.addWidget(self.__mainInfoText, 0, 0, 1, 2)
+        self.__grid.addWidget(self.__progressText, 1, 0, 1, 2)
+        self.__grid.addWidget(self.__mountLabel, 2, 0, 1, 1)
+        self.__grid.addWidget(self.__mountText, 2, 1, 1, 1)
+        self.__grid.addWidget(self.__sizeLabel, 3, 0, 1, 1)
+        self.__grid.addWidget(self.__sizeText, 3, 1, 1, 1)
+        self.__grid.addWidget(self.__resizeCheckBox, 4, 0, 1, 2)
+        self.__grid.addWidget(self.__startButton, 5, 0, 1, 2)
 
         self.setLayout(self.__grid)
+
+    def ifFieldsFilled(self) -> bool:
+        if(self.__mountText.getPath() == None):
+            ifMsg("Enter where RAM disk", 4)
+            return False
+        if(is_int(self.__sizeText.text()) == False):
+            ifMsg("Size of RAM disk is not number or empty", 4)
+            return False
+        elif(int(self.__sizeText.text()) < 0):
+            ifMsg("Size of RAM disk cannot be negative", 4)
+            return False
+
+    def __startButton_handler(self):
+        self.__progressText.setText("=====Please wait, RAM disk is opening/closing/resizing...=====")
+        self.__progressText.repaint()
+
+        self.__startButton_handler2()
+
+        self.__progressText.setText("Input data below: ")
+        self.__progressText.repaint()
+
+    def __startButton_handler2(self):
+        if(self.ifFieldsFilled() == False):
+            return
+
+        global rpqsev
+        global sysuser
+        mountPath = os.path.abspath(self.__mountText.getPath())
+        size = int(self.__sizeText.text())
+
+        if(size == 0): # RAM Close
+            anw = exe_orErrorShow(f"{rpqsev} sudo --askpass umount {mountPath}")
+            if(anw[3] == True):
+                return
+        else:          # RAM Open/Resize
+            if(self.__resizeCheckBox.isChecked() == True): # RAM Resize
+                anw = exe_orErrorShow(f"{rpqsev} sudo --askpass mount -t tmpfs -o remount,size={size}M tmpfs {mountPath}")
+                if(anw[3] == True):
+                    return
+            else:                                          # RAM Open
+                anw = exe_orErrorShow(f"{rpqsev} sudo --askpass mount -t tmpfs -o size={size}M tmpfs {mountPath}")
+                if(anw[3] == True):
+                    return
+                anw = exe_orErrorShow(f"{rpqsev} sudo --askpass chown -R {sysuser} {mountPath}")
+                if(anw[3] == True):
+                    return
+
+        pout("\n===== RAM disk opened/closed/resized =====")
+        ifMsg(f"RAM disk {mountPath} opened/closed/resized", 2)
 
 if __name__ == '__main__':
 
