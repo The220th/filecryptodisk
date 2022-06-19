@@ -71,6 +71,16 @@ def exe_orErrorExit(command : str, debug : bool = True) -> tuple:
         exit()
     return out
 
+def exe_orErrorShow(command : str, debug : bool = True) -> tuple:
+    out = exe(command, debug)
+    errorNotice = False
+    if(out[1] != ""):
+        error_msg = f"=====\nError: {out[1]}\n====="
+        pout(error_msg)
+        ifMsg(error_msg, 4)
+        errorNotice = True
+    return out + (errorNotice,)
+
 def is_int(x : str):
     try:
         tempVal = int(x)
@@ -185,7 +195,7 @@ class MainWidget(QWidget):
         self.__stackedWidget.setCurrentIndex(i)
     
     def __checkMappersButton_hundler(self):
-        anw = exe_orErrorExit("ls /dev/mapper/")
+        anw = exe_orErrorShow("ls /dev/mapper/")
         toOut = "Opened containers: \n"
         anw = anw[0].split()
         for i in range(len(anw)):
@@ -312,16 +322,23 @@ class CreateCryptoDiskWidget(QWidget):
             return False
 
     def __startButton_handler(self):
+        self.__progressText.setText("=====Please wait, filecryptodisk is creating...=====")
+        self.__progressText.repaint()
+
+        self.__startButton_handler2()
+
+        self.__progressText.setText("Input data below: ")
+        self.__progressText.repaint()
+
+    def __startButton_handler2(self):
         if(self.ifFieldsFilled() == False):
             return
+
         filePath = os.path.abspath(self.__fileText.getPath())
         pswd = self.__passwordText.text()
         size = int(self.__sizeText.text())
         conRndName = getRandomString(35)
         global rpqsev
-
-        self.__progressText.setText("=====Please wait, filecryptodisk is creating...=====")
-        self.__progressText.repaint()
 
         anw = exe(f"dd if=/dev/zero of={filePath} bs=1M count={size} && sync") # why output in errno?
         pout(f":{anw[0]}\n:{anw[1]}\n:{anw[2]}")
@@ -329,16 +346,21 @@ class CreateCryptoDiskWidget(QWidget):
         #anw = exe(f"mkfs.ext4 {filePath}") # why output in errno?
         #pout(f":{anw[0]}\n:{anw[1]}\n:{anw[2]}")
         pout(f"> echo -n *** | {rpqsev} sudo --askpass cryptsetup luksFormat {filePath} -")
-        exe_orErrorExit(f"echo -n \"{pswd}\" | {rpqsev} sudo --askpass cryptsetup luksFormat {filePath} -", False)
+        anw = exe_orErrorShow(f"echo -n \"{pswd}\" | {rpqsev} sudo --askpass cryptsetup luksFormat {filePath} -", False)
+        if(anw[3] == True):
+            return
 
-        exe_orErrorExit(f"echo -n \"{pswd}\" | {rpqsev} sudo --askpass cryptsetup luksOpen {filePath} {conRndName} -", False)
-        anw = exe(f"{rpqsev} sudo --askpass mkfs.ext4 /dev/mapper/{conRndName}") # why output in errno?
-        pout(f":{anw[0]}\n:{anw[1]}\n:{anw[2]}")
-        time.sleep(5)
-        exe_orErrorExit(f"{rpqsev} sudo cryptsetup luksClose {conRndName}")
+        anw = exe_orErrorShow(f"echo -n \"{pswd}\" | {rpqsev} sudo --askpass cryptsetup luksOpen {filePath} {conRndName} -", False)
+        if(anw[3] == True):
+            return
+        else:
+            anw = exe(f"{rpqsev} sudo --askpass mkfs.ext4 /dev/mapper/{conRndName}") # why output in errno?
+            pout(f":{anw[0]}\n:{anw[1]}\n:{anw[2]}")
+            time.sleep(5)
+            anw = exe_orErrorShow(f"{rpqsev} sudo cryptsetup luksClose {conRndName}")
+            if(anw[3] == True):
+                return
 
-        self.__progressText.setText("Input data below: ")
-        self.__progressText.repaint()
         pout("\n===== filecryptodisk created =====")
         ifMsg(f"filecryptodisk {filePath} created", 2)
 
@@ -418,11 +440,17 @@ class OpenCryptoDiskWidget(QWidget):
             return False
 
     def __startButton_handler(self):
-        if(self.ifFieldsFilled() == False):
-            return
-
         self.__progressText.setText("=====Please wait, filecryptodisk is openning...=====")
         self.__progressText.repaint()
+
+        self.__startButton_handler2()
+
+        self.__progressText.setText("Input data below: ")
+        self.__progressText.repaint()
+
+    def __startButton_handler2(self):
+        if(self.ifFieldsFilled() == False):
+            return
 
         global rpqsev
         global sysuser
@@ -432,12 +460,16 @@ class OpenCryptoDiskWidget(QWidget):
         pswd = self.__passwordText.text()
 
         pout(f"> echo -n *** | {rpqsev} sudo --askpass cryptsetup luksOpen {filePath} {container} -")
-        exe_orErrorExit(f"echo -n \"{pswd}\" | {rpqsev} sudo --askpass cryptsetup luksOpen {filePath} {container} -", False)
-        exe_orErrorExit(f"{rpqsev} sudo --askpass mount /dev/mapper/{container} {mountPath}")
-        exe_orErrorExit(f"{rpqsev} sudo --askpass chown -R {sysuser} {mountPath}")
+        anw = exe_orErrorShow(f"echo -n \"{pswd}\" | {rpqsev} sudo --askpass cryptsetup luksOpen {filePath} {container} -", False)
+        if(anw[3] == True):
+            return
+        anw = exe_orErrorShow(f"{rpqsev} sudo --askpass mount /dev/mapper/{container} {mountPath}")
+        if(anw[3] == True):
+            return
+        anw = exe_orErrorShow(f"{rpqsev} sudo --askpass chown -R {sysuser} {mountPath}")
+        if(anw[3] == True):
+            return
 
-        self.__progressText.setText("Input data below: ")
-        self.__progressText.repaint()
         pout("\n===== filecryptodisk opened =====")
         ifMsg(f"filecryptodisk {filePath} opened", 2)
 
@@ -461,6 +493,8 @@ class CloseCryptoDiskWidget(QWidget):
     __containerText = None
     __mountText = None
 
+    __closeOnlyCheckBox = None
+
     def __init__(self):
         super().__init__()
         self.__grid = QGridLayout()
@@ -470,6 +504,11 @@ class CloseCryptoDiskWidget(QWidget):
         self.__mountLabel = QLabel("Where filecryptodisk will be open: ", self)
         self.__containerText = QLineEdit(self)
         self.__mountText = FileChooser(3)
+        self.__closeOnlyCheckBox = QCheckBox("Close container only")
+        self.__closeOnlyCheckBox.setChecked(False)
+        self.__closeOnlyCheckBox.setToolTip("If active: Will try to unmount the directory\
+             where the container was opened, and not just close the container\n\
+             If inactive: Just close opened luks container")
 
         self.__startButton = QPushButton("Start", self)
         self.__startButton.clicked.connect(lambda:self.__startButton_handler())
@@ -479,7 +518,8 @@ class CloseCryptoDiskWidget(QWidget):
         self.__grid.addWidget(self.__containerText, 1, 1, 1, 1)
         self.__grid.addWidget(self.__mountLabel, 2, 0, 1, 1)
         self.__grid.addWidget(self.__mountText, 2, 1, 1, 1)
-        self.__grid.addWidget(self.__startButton, 3, 0, 1 , 2)
+        self.__grid.addWidget(self.__closeOnlyCheckBox, 3, 1, 1, 1)
+        self.__grid.addWidget(self.__startButton, 4, 0, 1 , 2)
 
         self.setLayout(self.__grid)
 
@@ -487,26 +527,36 @@ class CloseCryptoDiskWidget(QWidget):
         if(self.__containerText.text() == ""):
             ifMsg("Enter container name", 4)
             return False
-        if(self.__mountText.getPath() == None):
-            ifMsg("Enter where filecryptodisk will be open", 4)
-            return False
+        if(self.__closeOnlyCheckBox.isChecked() == False):
+            if(self.__mountText.getPath() == None):
+                ifMsg("Enter where filecryptodisk will be open", 4)
+                return False
 
     def __startButton_handler(self):
-        if(self.ifFieldsFilled() == False):
-            return
-
         self.__progressText.setText("=====Please wait, filecryptodisk is closing...=====")
         self.__progressText.repaint()
 
-        global rpqsev
-        container = self.__containerText.text()
-        mountPath = os.path.abspath(self.__mountText.getPath())
-
-        exe_orErrorExit(f"{rpqsev} sudo umount {mountPath}")
-        exe_orErrorExit(f"{rpqsev} sudo cryptsetup luksClose {container}")
+        self.__startButton_handler2()
 
         self.__progressText.setText("Input data below: ")
         self.__progressText.repaint()
+
+    def __startButton_handler2(self):
+        if(self.ifFieldsFilled() == False):
+            return
+
+        global rpqsev
+        container = self.__containerText.text()
+
+        if(self.__closeOnlyCheckBox.isChecked() == False):
+            mountPath = os.path.abspath(self.__mountText.getPath())
+            anw = exe_orErrorShow(f"{rpqsev} sudo --askpass umount {mountPath}")
+            if(anw[3] == True):
+                return
+        anw = exe_orErrorShow(f"{rpqsev} sudo --askpass cryptsetup luksClose {container}")
+        if(anw[3] == True):
+            return
+
         pout("\n===== filecryptodisk closed =====")
         ifMsg(f"filecryptodisk {container} closed", 2)
 
@@ -571,38 +621,48 @@ class InfoCryptoDiskWidget(QWidget):
         self.setLayout(self.__grid)
 
     def __startButtonInfo_handler(self):
+        self.__progressText.setText("=====Please wait, getting info of filecryptodisk...=====")
+        self.__progressText.repaint()
+
+        self.__startButtonInfo_handler2()
+
+        self.__progressText.setText("Input data below: ")
+        self.__progressText.repaint()
+
+    def __startButtonInfo_handler2(self):
         if(self.__infoText.text() == ""):
             ifMsg("Enter container name", 4)
             return
 
-        self.__progressText.setText("=====Please wait, getting info of filecryptodisk...=====")
-        self.__progressText.repaint()
-
         global rpqsev
         container = self.__infoText.text()
 
-        anw = exe_orErrorExit(f"{rpqsev} sudo --askpass cryptsetup -v status {container}")
+        anw = exe_orErrorShow(f"{rpqsev} sudo --askpass cryptsetup -v status {container}")
+        if(anw[3] == True):
+            return
 
-        self.__progressText.setText("Input data below: ")
-        self.__progressText.repaint()
         pout(f"\n===== filecryptodisk info =====\n{anw[0]}")
         ifMsg(f"filecryptodisk {container} info: \n\n{anw[0]}", 2)
 
     def __startButtonHash_handler(self):
+        self.__progressText.setText("=====Please wait, getting hash of filecryptodisk...=====")
+        self.__progressText.repaint()
+
+        self.__startButtonHash_handler2()
+
+        self.__progressText.setText("Input data below: ")
+        self.__progressText.repaint()
+
+    def __startButtonHash_handler2(self):
         if(self.__hashText.getPath() == None):
             ifMsg("Enter folder, where container opened", 4)
             return
-
-        self.__progressText.setText("=====Please wait, getting hash of filecryptodisk...=====")
-        self.__progressText.repaint()
 
         mountPath = os.path.abspath(self.__hashText.getPath())
 
         is_dirHierarchy = self.__hashCheckBox.isChecked()
         hash = self.calcHashOpenedContainer(mountPath, is_dirHierarchy)
 
-        self.__progressText.setText("Input data below: ")
-        self.__progressText.repaint()
         pout(f"\n===== filecryptodisk hash =====\n{hash}")
         ifMsg(f"filecryptodisk hash: \n\n{hash}", 2)
         
@@ -668,5 +728,5 @@ if __name__ == '__main__':
 
     mainWidget = MainWidget()
     mainWidget.setWindowTitle("filecryptodisk")
-    mainWidget.setWindowIcon( QtGui.QIcon("./ico.png") ) # https://github.com/python-pillow/Pillow/issues/4097
+    mainWidget.setWindowIcon( QtGui.QIcon("./ico.png") )
     sys.exit(app.exec_())
