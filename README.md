@@ -46,7 +46,7 @@
 > filecryptodisk
 ```
 
-Видео с демонтрацией: 
+[Видео с демонтрацией](https://youtu.be/s08_ltpw5TI): [https://youtu.be/s08_ltpw5TI](https://youtu.be/s08_ltpw5TI)
 
 ![](./imgsrc/example.png)
 
