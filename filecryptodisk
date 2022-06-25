@@ -689,14 +689,16 @@ class InfoCryptoDiskWidget(QWidget):
             x.append(rel_file)
 
         x = sorted(x)
-        files = sorted(files_buff)
-        #print(x)
-        #print(files)
+
+        files_hashes = []
+        for file_i in files_buff:
+            files_hashes.append(  getHashOfFile(  os.path.abspath(file_i)  )   )
+        files_hashes = sorted(files_hashes)
 
         from io import StringIO
         o = StringIO()
-        for file_i in files:
-            o.write(getHashOfFile(  os.path.abspath(file_i)  ))
+        for hash_i in files_hashes:
+            o.write(hash_i)
         hash_files = getHashOfString(o.getvalue())
 
         o = StringIO()
