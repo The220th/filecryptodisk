@@ -146,7 +146,7 @@ class MainWidget(QWidget):
     __grid = None
 
     __widgetsSelectCombo = None
-    __variantsToChoose = ["Create cryptofiledisk", "Open cryptofiledisk", "Close cryptofiledisk", "Info cryptofiledisk", "Create RAM-disk"]
+    __variantsToChoose = ["Create cryptofiledisk", "Open cryptofiledisk", "Close cryptofiledisk", "Info cryptofiledisk", "RAM-disk"]
     __stackedWidget = None
 
     __checkMappersButton = None
@@ -397,6 +397,7 @@ class OpenCryptoDiskWidget(QWidget):
     __mountText = None
     __containerText = None
     __passwordText = None
+    __readOnlyCheckBox = None
 
     def __init__(self):
         super().__init__()
@@ -414,6 +415,8 @@ class OpenCryptoDiskWidget(QWidget):
         #self.__containerText.setText(path.basename(getNormalizedName(path)))
         self.__passwordText = QLineEdit(self)
         self.__passwordText.setEchoMode(QLineEdit.Password)
+        self.__readOnlyCheckBox = QCheckBox("Read only")
+        self.__readOnlyCheckBox.setChecked(False)
 
         self.__startButton = QPushButton("Start", self)
         self.__startButton.clicked.connect(lambda:self.__startButton_handler())
@@ -427,7 +430,8 @@ class OpenCryptoDiskWidget(QWidget):
         self.__grid.addWidget(self.__containerText, 3, 1, 1, 1)
         self.__grid.addWidget(self.__passwordLabel, 4, 0, 1, 1)
         self.__grid.addWidget(self.__passwordText, 4, 1, 1, 1)
-        self.__grid.addWidget(self.__startButton, 5, 0, 1 , 2)
+        self.__grid.addWidget(self.__readOnlyCheckBox, 5, 0, 1 , 2)
+        self.__grid.addWidget(self.__startButton, 6, 0, 1 , 2)
 
         self.setLayout(self.__grid)
 
@@ -464,17 +468,21 @@ class OpenCryptoDiskWidget(QWidget):
         mountPath = os.path.abspath(self.__mountText.getPath())
         container = self.__containerText.text()
         pswd = self.__passwordText.text()
+        readOnly = ""
+        if(self.__readOnlyCheckBox.isChecked() == True):
+            readOnly = " -o ro"
 
         pout(f"> echo -n *** | {rpqsev} sudo --askpass cryptsetup luksOpen {filePath} {container} -")
         anw = exe_orErrorShow(f"echo -n \"{pswd}\" | {rpqsev} sudo --askpass cryptsetup luksOpen {filePath} {container} -", False)
         if(anw[3] == True):
             return
-        anw = exe_orErrorShow(f"{rpqsev} sudo --askpass mount /dev/mapper/{container} {mountPath}")
+        anw = exe_orErrorShow(f"{rpqsev} sudo --askpass mount{readOnly} /dev/mapper/{container} {mountPath}")
         if(anw[3] == True):
             return
-        anw = exe_orErrorShow(f"{rpqsev} sudo --askpass chown -R {sysuser} {mountPath}")
-        if(anw[3] == True):
-            return
+        if(readOnly == ""):
+            anw = exe_orErrorShow(f"{rpqsev} sudo --askpass chown -R {sysuser} {mountPath}")
+            if(anw[3] == True):
+                return
 
         pout("\n===== filecryptodisk opened =====")
         ifMsg(f"filecryptodisk {filePath} opened", 2)
