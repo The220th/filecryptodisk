@@ -23,11 +23,12 @@
 > sudo apt install zenity
 ```
 
-Также нужно установить пакет `PyQt5` для `Python`:
+Также нужно установить пакеты `PyQt5` и `pillow` для `Python`:
 
 ``` bash
 > python3 -m pip install --upgrade pip
 > pip3 install PyQt5
+> pip3 install pillow
 ```
 
 # Установка
